@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Matrix Rain with Audio-Driven Kick Pulse</title>
+  <style>
+    /* Remove default margins and hide overflow */
+    body {
+      margin: 0;
+      background: black;
+      overflow: hidden;
+      color: #0F0;
+      font-family: monospace;
+    }
+    /* Make the canvas fill the whole screen */
+    canvas {
+      display: block;
+    }
+    /* Optional: Style a note for user interaction */
+    #startMessage {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.7);
+      padding: 8px;
+      border: 1px solid #0F0;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+  <div id="startMessage">Click anywhere to start audio playback.</div>
+  <canvas id="matrixCanvas"></canvas>
+
+  <script>
+    // === Matrix Rain Setup ===
+    const canvas = document.getElementById("matrixCanvas");
+    const ctx = canvas.getContext("2d");
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    // Define Japanese characters.
+    const characters = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン" +
+                       "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん";
+    const fontSize = 20;
+    let columns = Math.floor(canvas.width / fontSize);
+    let drops = Array(columns).fill(0);
+
+    // === Global Pulse Variables ===
+    let globalPulse = 0;   // When > 0, letters will glow brightly.
+    const bassThreshold = 125;  // Threshold for bass amplitude.
+    const maxPulse = .5;        // Maximum glow value when a kick is detected.
+    const decayRate = .499;       // Increase decay so pulse disappears very quickly.
+    let prevBassAvg = 0;        // To track the previous bass average for transient detection.
+
+    // === Audio Setup ===
+    // Create an Audio element for your song.
+    const audio = new Audio("LL.m4a");  // Place your audio file in the project folder.
+    audio.crossOrigin = "anonymous"; // In case needed.
+    audio.loop = true;
+
+    // Create an AudioContext and route the audio through an AnalyserNode.
+    const audioContext = new AudioContext();
+    const audioSource = audioContext.createMediaElementSource(audio);
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048; // Increased FFT size for better frequency resolution.
+    const frequencyData = new Uint8Array(analyser.frequencyBinCount);
+    audioSource.connect(analyser);
+    analyser.connect(audioContext.destination);
+
+    // === User Interaction for Autoplay ===
+    // Autoplay restrictions require a user click to resume the AudioContext.
+    document.body.addEventListener("click", () => {
+      if (audioContext.state === "suspended") {
+        audioContext.resume();
+      }
+      if (audio.paused) {
+        audio.play();
+      }
+      document.getElementById("startMessage").style.display = "none";
+    }, { once: true });
+
+    // === Function to Update the Pulse Based on Kick Drum Detection ===
+    function updatePulse() {
+      analyser.getByteFrequencyData(frequencyData);
+      let bassSum = 0;
+      // Use bins 1 through 4 (skip bin 0 which may include DC offset).
+      const startBin = 1;
+      const endBin = 4;
+      let count = 0;
+      for (let i = startBin; i <= endBin; i++) {
+        bassSum += frequencyData[i];
+        count++;
+      }
+      const bassAvg = bassSum / count;
+      
+      // Detect a transient spike (kick drum) by checking if bassAvg exceeds the threshold
+      // and has increased significantly relative to the previous average.
+      if (bassAvg > bassThreshold && (bassAvg - prevBassAvg) >= 1 ) {
+        globalPulse = maxPulse;
+      }
+      // && (bassAvg - prevBassAvg) >= 0 to above if statement if you want to try a kickbass filter
+      prevBassAvg = bassAvg;
+      
+      // Decay the pulse quickly.
+      if (globalPulse > 0) {
+        globalPulse -= decayRate;
+        if (globalPulse < 0) globalPulse = 0;
+      }
+    }
+
+    // === Draw Loop ===
+    function draw() {
+      updatePulse(); // Update the globalPulse based on current bass energy.
+
+      // Draw a translucent black rectangle to fade out trails.
+      ctx.fillStyle = "rgba(0, 0, 0, .05)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = "#0F0"; // Matrix green.
+      ctx.font = fontSize + "px monospace";
+
+      for (let i = 0; i < drops.length; i++) {
+        const x = i * fontSize;
+        const y = drops[i] * fontSize * 16;  // Vertical spacing multiplier.
+
+        // Choose a random character.
+        const text = characters.charAt(Math.floor(Math.random() * characters.length));
+
+        // Apply the global pulse glow if active.
+        if (globalPulse > 0) {
+          ctx.shadowColor = "#0F0";
+          ctx.shadowBlur = globalPulse;;
+        } else {
+          ctx.shadowBlur = 0;
+        }
+
+        ctx.fillText(text, x, y);
+
+        // Reset drop to the top randomly after passing the bottom.
+        if (drops[i] * fontSize * 2 > canvas.height && Math.random() > 0.975) {
+          drops[i] = 0;
+        }
+        drops[i] += 0.15;
+      }
+    }
+    setInterval(draw, 33);
+
+    // === Adjust Canvas on Resize ===
+    window.addEventListener("resize", () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      columns = Math.floor(canvas.width / fontSize);
+      drops = Array(columns).fill(0);
+    });
+  </script>
+</body>
+</html>

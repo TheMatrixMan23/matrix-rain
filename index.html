@@ -97,7 +97,7 @@
       
       // Detect a transient spike (kick drum) by checking if bassAvg exceeds the threshold
       // and has increased significantly relative to the previous average.
-      if (bassAvg > bassThreshold && (bassAvg - prevBassAvg) >= 1.35 ) {
+      if (bassAvg > bassThreshold && (bassAvg - prevBassAvg) >= 1.3 ) {
         globalPulse = maxPulse;
       }
       // && (bassAvg - prevBassAvg) >= 0 to above if statement if you want to try a kickbass filter
@@ -130,7 +130,7 @@
 
         // Apply the global pulse glow if active.
         if (globalPulse > 0) {
-          ctx.shadowColor = "rgba(0, 255, 0, 0.1)";
+          ctx.shadowColor = "rgba(0, 255, 0, 0.2)";
           ctx.shadowBlur = globalPulse;;
         } else {
           ctx.shadowBlur = 0;

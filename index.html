@@ -7,7 +7,7 @@ body {
   background-color: black;
   margin: 0;
   overflow: hidden;
-  color: white; /* Text color for sliders */
+  color: white;
 }
 
 #canvas {
@@ -18,7 +18,7 @@ body {
   position: absolute;
   top: 10px;
   left: 10px;
-  z-index: 10; /* Ensure controls are on top */
+  z-index: 10;
 }
 
 input[type="range"] {
@@ -26,10 +26,9 @@ input[type="range"] {
 }
 
 label {
-    display: block; /* Makes labels stack nicely */
+    display: block;
     margin-bottom: 5px;
 }
-
 </style>
 </head>
 <body>
@@ -50,9 +49,28 @@ label {
     <input type="text" id="frequencyRange" value="20-50">
 </div>
 
-
 <script>
-// ... (rest of the JavaScript code as before, with modifications below)
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const audio = document.getElementById('audio');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+// *** THIS IS WHERE YOU PUT THE FILE PATH ***
+const filePath = 'LL.m4a'; // Replace with your actual path!
+audio.src = filePath;
+
+audio.onerror = function() {
+  alert("Error loading audio file. Please check the file path. Is the file in the same directory?");
+};
+
+audio.onloadeddata = function() {
+  audio.play();
+  draw();
+};
+
+// ... (Rest of the JavaScript code from previous responses goes here)
 
 // Get slider elements
 const spikeThresholdSlider = document.getElementById('spikeThreshold');
@@ -108,7 +126,39 @@ function detectKick() {
   return false;
 }
 
-// ... (rest of the JavaScript code)
+function analyzeFrequencyRange(startFreq, endFreq) {
+    let sum = 0;
+    const startIndex = Math.round(startFreq / audioCtx.sampleRate * analyser.fftSize);
+    const endIndex = Math.round(endFreq / audioCtx.sampleRate * analyser.fftSize);
+    for (let i = startIndex; i < endIndex; i++) {
+        sum += dataArray[i];
+    }
+    return sum / (endIndex - startIndex);
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  analyser.getByteFrequencyData(dataArray);
+
+  if (detectKick()) {
+    drawCircle();
+  }
+
+  requestAnimationFrame(draw);
+}
+
+function drawCircle() {
+  ctx.fillStyle = 'white';
+  ctx.beginPath();
+  ctx.arc(canvas.width / 2, canvas.height / 2, 50, 0, 2 * Math.PI);
+  ctx.fill();
+}
+
+
+window.addEventListener('resize', () => {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+});
 
 </script>
 

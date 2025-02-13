@@ -27,7 +27,7 @@ const audio = document.getElementById('audio');
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-const filePath = 'LL.m4a'; // *** PASTE YOUR FILE PATH HERE ***
+const filePath = 'path/to/your/audio.mp4'; // *** PASTE YOUR FILE PATH HERE ***
 audio.src = filePath;
 
 audio.onerror = function() {
@@ -38,7 +38,6 @@ audio.onloadeddata = function() {
   audio.play();
   draw();
 };
-
 
 let audioCtx = new AudioContext();
 let analyser = audioCtx.createAnalyser();
@@ -52,11 +51,35 @@ const bufferLength = analyser.frequencyBinCount;
 const dataArray = new Uint8Array(bufferLength);
 
 let lastKickTime = 0;
-const kickCooldown = 100; // Adjust if needed
+const kickCooldown = 150; // Increased cooldown
 
-// Adaptive Kick Detection (No User Input)
-let kickThreshold = 100; // Initial threshold (will be adjusted)
-let thresholdAdjustmentFactor = 0.95; // How much to adjust the threshold
+// Spike Detection for Kick
+let previousLowFrequencyValues = new Array(5).fill(0); // Store previous values
+const spikeThresholdMultiplier = 2.0; // Adjust for sensitivity
+
+function detectKick() {
+  const currentTime = audio.currentTime * 1000;
+
+  // Analyze a very specific low-frequency range (e.g., 20Hz - 50Hz)
+  let currentLowFrequencyValue = analyzeFrequencyRange(20, 50);
+
+  // Detect spikes
+  let spikeDetected = false;
+  const averagePrevious = previousLowFrequencyValues.reduce((a, b) => a + b, 0) / previousLowFrequencyValues.length;
+  if (currentLowFrequencyValue > averagePrevious * spikeThresholdMultiplier) {
+      spikeDetected = true;
+  }
+
+  previousLowFrequencyValues.shift(); // Remove the oldest value
+  previousLowFrequencyValues.push(currentLowFrequencyValue); // Add the current value
+
+  if (spikeDetected && currentTime - lastKickTime > kickCooldown) {
+    lastKickTime = currentTime;
+    return true;
+  }
+
+  return false;
+}
 
 function analyzeFrequencyRange(startFreq, endFreq) {
     let sum = 0;
@@ -66,24 +89,6 @@ function analyzeFrequencyRange(startFreq, endFreq) {
         sum += dataArray[i];
     }
     return sum / (endIndex - startIndex);
-}
-
-function detectKick() {
-    // Analyze a specific low-frequency range (e.g., 20Hz - 100Hz)
-    const kickValue = analyzeFrequencyRange(20, 100);
-
-    const currentTime = audio.currentTime * 1000;
-
-    if (kickValue > kickThreshold && currentTime - lastKickTime > kickCooldown) {
-        lastKickTime = currentTime;
-        // Adjust threshold dynamically based on the current kickValue.
-        kickThreshold = Math.max(50, kickValue * thresholdAdjustmentFactor); // Prevent threshold from going too low.
-        return true;
-    }
-
-    // Gradually decrease the threshold if no kick is detected
-    kickThreshold = Math.max(50, kickThreshold * 0.995); // Adjust decay rate as needed.
-    return false;
 }
 
 
@@ -104,7 +109,6 @@ function drawCircle() {
   ctx.arc(canvas.width / 2, canvas.height / 2, 50, 0, 2 * Math.PI);
   ctx.fill();
 }
-
 
 window.addEventListener('resize', () => {
   canvas.width = window.innerWidth;

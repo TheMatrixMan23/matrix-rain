@@ -7,11 +7,29 @@ body {
   background-color: black;
   margin: 0;
   overflow: hidden;
+  color: white; /* Text color for sliders */
 }
 
 #canvas {
   display: block;
 }
+
+#controls {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 10; /* Ensure controls are on top */
+}
+
+input[type="range"] {
+  width: 200px;
+}
+
+label {
+    display: block; /* Makes labels stack nicely */
+    margin-bottom: 5px;
+}
+
 </style>
 </head>
 <body>
@@ -19,50 +37,59 @@ body {
 <canvas id="canvas"></canvas>
 <audio id="audio" controls style="display:none;"></audio>
 
+<div id="controls">
+    <label for="spikeThreshold">Spike Threshold Multiplier:</label>
+    <input type="range" id="spikeThreshold" min="1.0" max="5.0" step="0.1" value="2.0">
+    <span id="spikeThresholdValue">2.0</span>
+
+    <label for="kickCooldown">Kick Cooldown (ms):</label>
+    <input type="range" id="kickCooldown" min="50" max="500" step="10" value="150">
+    <span id="kickCooldownValue">150</span>
+
+    <label for="frequencyRange">Frequency Range (e.g., 20-50):</label>
+    <input type="text" id="frequencyRange" value="20-50">
+</div>
+
+
 <script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-const audio = document.getElementById('audio');
+// ... (rest of the JavaScript code as before, with modifications below)
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+// Get slider elements
+const spikeThresholdSlider = document.getElementById('spikeThreshold');
+const kickCooldownSlider = document.getElementById('kickCooldown');
+const frequencyRangeInput = document.getElementById('frequencyRange');
 
-// *** FIXED FILE PATH ***
-const filePath = 'LL.m4a'; // Assuming LL.m4a is in the same directory as the HTML file.
-audio.src = filePath;
+// Get display elements for values
+const spikeThresholdValueDisplay = document.getElementById('spikeThresholdValue');
+const kickCooldownValueDisplay = document.getElementById('kickCooldownValue');
 
 
-audio.onerror = function() {
-  alert("Error loading audio file. Please check the file path.  Is LL.m4a in the same folder as this HTML file?");
-};
+let spikeThresholdMultiplier = parseFloat(spikeThresholdSlider.value); // Initialize
+let kickCooldown = parseInt(kickCooldownSlider.value); // Initialize
+let frequencyRange = frequencyRangeInput.value;
 
-audio.onloadeddata = function() {
-  audio.play();
-  draw();
-};
+// Event listeners for sliders
+spikeThresholdSlider.addEventListener('input', () => {
+    spikeThresholdMultiplier = parseFloat(spikeThresholdSlider.value);
+    spikeThresholdValueDisplay.textContent = spikeThresholdSlider.value;
+});
 
-let audioCtx = new AudioContext();
-let analyser = audioCtx.createAnalyser();
-audio.crossOrigin = "anonymous";
-let source = audioCtx.createMediaElementSource(audio);
-source.connect(analyser);
-analyser.connect(audioCtx.destination);
+kickCooldownSlider.addEventListener('input', () => {
+    kickCooldown = parseInt(kickCooldownSlider.value);
+    kickCooldownValueDisplay.textContent = kickCooldownSlider.value;
+});
 
-analyser.fftSize = 2048;
-const bufferLength = analyser.frequencyBinCount;
-const dataArray = new Uint8Array(bufferLength);
+frequencyRangeInput.addEventListener('input', () => {
+    frequencyRange = frequencyRangeInput.value;
+});
 
-let lastKickTime = 0;
-const kickCooldown = 150;
 
-// Spike Detection for Kick
-let previousLowFrequencyValues = new Array(5).fill(0);
-const spikeThresholdMultiplier = 2.0;
 
 function detectKick() {
   const currentTime = audio.currentTime * 1000;
 
-  let currentLowFrequencyValue = analyzeFrequencyRange(20, 50);
+  const [startFreq, endFreq] = frequencyRange.split('-').map(Number); // Parse frequency range
+  let currentLowFrequencyValue = analyzeFrequencyRange(startFreq, endFreq);
 
   let spikeDetected = false;
   const averagePrevious = previousLowFrequencyValues.reduce((a, b) => a + b, 0) / previousLowFrequencyValues.length;
@@ -81,38 +108,7 @@ function detectKick() {
   return false;
 }
 
-function analyzeFrequencyRange(startFreq, endFreq) {
-    let sum = 0;
-    const startIndex = Math.round(startFreq / audioCtx.sampleRate * analyser.fftSize);
-    const endIndex = Math.round(endFreq / audioCtx.sampleRate * analyser.fftSize);
-    for (let i = startIndex; i < endIndex; i++) {
-        sum += dataArray[i];
-    }
-    return sum / (endIndex - startIndex);
-}
-
-function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  analyser.getByteFrequencyData(dataArray);
-
-  if (detectKick()) {
-    drawCircle();
-  }
-
-  requestAnimationFrame(draw);
-}
-
-function drawCircle() {
-  ctx.fillStyle = 'white';
-  ctx.beginPath();
-  ctx.arc(canvas.width / 2, canvas.height / 2, 50, 0, 2 * Math.PI);
-  ctx.fill();
-}
-
-window.addEventListener('resize', () => {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-});
+// ... (rest of the JavaScript code)
 
 </script>
 

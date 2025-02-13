@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kick Drum Visualizer</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden; /* Prevent scrollbars */
+            background-color: black;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh; /* Full viewport height */
+            font-family: sans-serif;
+        }
+
+        canvas {
+            position: absolute; /* Important for centering */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            z-index: 10; /* Ensure controls are above the canvas */
+
+        }
+         #thresholdInput, #minFrequencyInput, #maxFrequencyInput{
+            margin-bottom: 5px;
+        }
+
+
+    </style>
+</head>
+<body>
+
+<div id="controls">
+    Threshold: <input type="number" id="thresholdInput" value="0.15" step="0.01" min="0" max="1"><br/>
+    Min Freq: <input type="number" id="minFrequencyInput" value="20" step="1" min="0" max="20000"><br/>
+    Max Freq: <input type="number" id="maxFrequencyInput" value="150" step="1" min="0" max="20000"><br/>
+</div>
+
+<canvas id="myCanvas"></canvas>
+
+<script>
+    const thresholdInput = document.getElementById('thresholdInput');
+    const minFrequencyInput = document.getElementById('minFrequencyInput');
+    const maxFrequencyInput = document.getElementById('maxFrequencyInput');
+    const canvas = document.getElementById('myCanvas');
+    const ctx = canvas.getContext('2d');
+
+    let audioContext;
+    let analyser;
+    let source;
+    let audioBuffer;  //Store the audio buffer.
+    let kickDetected = false; //Flag.
+    let animationId;
+
+    // **1. Hardcoded File Path (Relative)**
+    const audioFilePath = "LL.m4a"; // IMPORTANT: Change this to your actual relative path!
+
+    // Function to resize the canvas
+    function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    // Function to draw the circle (same as before)
+    function drawCircle() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear previous circle
+        ctx.beginPath();
+        ctx.arc(canvas.width / 2, canvas.height / 2, 50, 0, 2 * Math.PI);
+        ctx.fillStyle = 'white';
+        ctx.fill();
+        ctx.closePath();
+
+       //Fade out animation.
+        function fadeOut() {
+             if (ctx.globalAlpha > 0) {
+                ctx.globalAlpha -= 0.05; // Adjust for speed of fade
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.beginPath();
+                ctx.arc(canvas.width / 2, canvas.height / 2, 50, 0, 2 * Math.PI);
+                ctx.fillStyle = 'white';
+                ctx.fill();
+                ctx.closePath();
+                requestAnimationFrame(fadeOut);
+            }
+            else{
+                ctx.globalAlpha = 1.0;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+
+        }
+        fadeOut();
+    }
+
+
+    // Audio analysis function (same as before)
+    function analyzeAudio() {
+        const bufferLength = analyser.frequencyBinCount; //Frequency bin count.
+        const dataArray = new Uint8Array(bufferLength); //Data array.
+
+        const checkKick = () => {
+             analyser.getByteFrequencyData(dataArray); //Get Freq Data.
+
+            //Get user input for the threshold and frequency range
+            const threshold = parseFloat(thresholdInput.value);
+            const minFrequency = parseInt(minFrequencyInput.value);
+            const maxFrequency = parseInt(maxFrequencyInput.value);
+
+            // Calculate the frequency bin width
+            const frequencyBinWidth = audioContext.sampleRate / analyser.fftSize;
+
+             // Determine the index range for the kick drum frequencies
+            const minIndex = Math.floor(minFrequency / frequencyBinWidth);
+            const maxIndex = Math.floor(maxFrequency / frequencyBinWidth);
+
+            // Calculate the average amplitude within the specified frequency range.
+            let sum = 0;
+            for (let i = minIndex; i <= maxIndex; i++) {
+                sum += dataArray[i];
+            }
+            const average = sum / (maxIndex - minIndex + 1);
+
+            // Normalize the average amplitude to 0-1 range.
+            const normalizedAverage = average / 255;
+
+            // Check if a kick drum beat is detected
+            if (normalizedAverage > threshold && !kickDetected) {
+                drawCircle(); // Draw
+                kickDetected = true; // Set flag.
+            }
+            else if(normalizedAverage <= threshold){
+                kickDetected = false; // Reset the flag when the beat subsides
+            }
+            // Continue Analysis Loop.
+            animationId = requestAnimationFrame(checkKick);
+        }
+        checkKick(); //Initial call.
+    }
+
+
+  // **2. Load and Play Audio (Modified for Autoplay)**
+    async function loadAndPlayAudio() {
+        try {
+            // Initialize AudioContext *before* fetching.
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+
+            const response = await fetch(audioFilePath);
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            const arrayBuffer = await response.arrayBuffer();
+
+            audioContext.decodeAudioData(arrayBuffer, (buffer) => {
+                audioBuffer = buffer;
+
+                // Create source and connect.  This is now INSIDE decodeAudioData
+                source = audioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 2048;
+                source.connect(analyser);
+                analyser.connect(audioContext.destination);
+
+                 // *** Autoplay Handling ***
+                function tryPlay() {
+                    if (audio

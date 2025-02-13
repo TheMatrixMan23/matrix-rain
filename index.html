@@ -27,11 +27,13 @@ const audio = document.getElementById('audio');
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-const filePath = 'path/to/your/audio.mp4'; // *** PASTE YOUR FILE PATH HERE ***
+// *** FIXED FILE PATH ***
+const filePath = 'LL.m4a'; // Assuming LL.m4a is in the same directory as the HTML file.
 audio.src = filePath;
 
+
 audio.onerror = function() {
-  alert("Error loading audio file. Please check the file path.");
+  alert("Error loading audio file. Please check the file path.  Is LL.m4a in the same folder as this HTML file?");
 };
 
 audio.onloadeddata = function() {
@@ -51,27 +53,25 @@ const bufferLength = analyser.frequencyBinCount;
 const dataArray = new Uint8Array(bufferLength);
 
 let lastKickTime = 0;
-const kickCooldown = 150; // Increased cooldown
+const kickCooldown = 150;
 
 // Spike Detection for Kick
-let previousLowFrequencyValues = new Array(5).fill(0); // Store previous values
-const spikeThresholdMultiplier = 2.0; // Adjust for sensitivity
+let previousLowFrequencyValues = new Array(5).fill(0);
+const spikeThresholdMultiplier = 2.0;
 
 function detectKick() {
   const currentTime = audio.currentTime * 1000;
 
-  // Analyze a very specific low-frequency range (e.g., 20Hz - 50Hz)
   let currentLowFrequencyValue = analyzeFrequencyRange(20, 50);
 
-  // Detect spikes
   let spikeDetected = false;
   const averagePrevious = previousLowFrequencyValues.reduce((a, b) => a + b, 0) / previousLowFrequencyValues.length;
   if (currentLowFrequencyValue > averagePrevious * spikeThresholdMultiplier) {
       spikeDetected = true;
   }
 
-  previousLowFrequencyValues.shift(); // Remove the oldest value
-  previousLowFrequencyValues.push(currentLowFrequencyValue); // Add the current value
+  previousLowFrequencyValues.shift();
+  previousLowFrequencyValues.push(currentLowFrequencyValue);
 
   if (spikeDetected && currentTime - lastKickTime > kickCooldown) {
     lastKickTime = currentTime;
@@ -90,7 +90,6 @@ function analyzeFrequencyRange(startFreq, endFreq) {
     }
     return sum / (endIndex - startIndex);
 }
-
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);

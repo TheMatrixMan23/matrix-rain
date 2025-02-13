@@ -1,251 +1,115 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kick Drum Visualizer</title>
-    <style>
-        body {
-            margin: 0;
-            overflow: hidden; /* Prevent scrollbars */
-            background-color: black;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh; /* Full viewport height */
-            font-family: sans-serif;
-        }
+<title>Audio Visualizer</title>
+<style>
+body {
+  background-color: black;
+  margin: 0;
+  overflow: hidden;
+}
 
-        canvas {
-            position: absolute; /* Important for centering */
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            cursor: pointer; /* Change cursor to pointer on hover */
-        }
-        #controls {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            color: white;
-            z-index: 10; /* Ensure controls are above the canvas */
-
-        }
-         #thresholdInput, #minFrequencyInput, #maxFrequencyInput{
-            margin-bottom: 5px;
-        }
-
-
-    </style>
+#canvas {
+  display: block;
+}
+</style>
 </head>
 <body>
 
-<div id="controls">
-    Threshold: <input type="number" id="thresholdInput" value="0.15" step="0.01" min="0" max="1"><br/>
-    Min Freq: <input type="number" id="minFrequencyInput" value="20" step="1" min="0" max="20000"><br/>
-    Max Freq: <input type="number" id="maxFrequencyInput" value="150" step="1" min="0" max="20000"><br/>
-</div>
-
-<canvas id="myCanvas"></canvas>
+<canvas id="canvas"></canvas>
+<audio id="audio" controls style="display:none;"></audio>
 
 <script>
-    const thresholdInput = document.getElementById('thresholdInput');
-    const minFrequencyInput = document.getElementById('minFrequencyInput');
-    const maxFrequencyInput = document.getElementById('maxFrequencyInput');
-    const canvas = document.getElementById('myCanvas');
-    const ctx = canvas.getContext('2d');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const audio = document.getElementById('audio');
 
-    let audioContext;
-    let analyser;
-    let source;
-    let audioBuffer;
-    let kickDetected = false;
-    let animationId;
-    let isPlaying = false; // Track whether audio is playing
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
-    // **1. File Path (CHANGE THIS!)**
-    const audioFilePath = "LL.m4a"; //  Replace with your actual path
+const filePath = 'path/to/your/audio.mp4'; // *** PASTE YOUR FILE PATH HERE ***
+audio.src = filePath;
 
-    // Resize canvas
-    function resizeCanvas() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-        drawInitialCircle(); // Redraw the circle on resize
+audio.onerror = function() {
+  alert("Error loading audio file. Please check the file path.");
+};
+
+audio.onloadeddata = function() {
+  audio.play();
+  draw();
+};
+
+
+let audioCtx = new AudioContext();
+let analyser = audioCtx.createAnalyser();
+audio.crossOrigin = "anonymous";
+let source = audioCtx.createMediaElementSource(audio);
+source.connect(analyser);
+analyser.connect(audioCtx.destination);
+
+analyser.fftSize = 2048;
+const bufferLength = analyser.frequencyBinCount;
+const dataArray = new Uint8Array(bufferLength);
+
+let lastKickTime = 0;
+const kickCooldown = 100; // Adjust if needed
+
+// Adaptive Kick Detection (No User Input)
+let kickThreshold = 100; // Initial threshold (will be adjusted)
+let thresholdAdjustmentFactor = 0.95; // How much to adjust the threshold
+
+function analyzeFrequencyRange(startFreq, endFreq) {
+    let sum = 0;
+    const startIndex = Math.round(startFreq / audioCtx.sampleRate * analyser.fftSize);
+    const endIndex = Math.round(endFreq / audioCtx.sampleRate * analyser.fftSize);
+    for (let i = startIndex; i < endIndex; i++) {
+        sum += dataArray[i];
     }
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
+    return sum / (endIndex - startIndex);
+}
 
+function detectKick() {
+    // Analyze a specific low-frequency range (e.g., 20Hz - 100Hz)
+    const kickValue = analyzeFrequencyRange(20, 100);
 
-    // Draw initial circle
-    function drawInitialCircle() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.beginPath();
-        ctx.arc(canvas.width / 2, canvas.height / 2, 50, 0, 2 * Math.PI);
-        ctx.fillStyle = 'white';
-        ctx.fill();
-        ctx.closePath();
-    }
+    const currentTime = audio.currentTime * 1000;
 
-
-    // Draw (and fade) the circle on kick
-      function drawCircle() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear previous circle
-        ctx.beginPath();
-        ctx.arc(canvas.width / 2, canvas.height / 2, 50, 0, 2 * Math.PI);
-        ctx.fillStyle = 'white';
-        ctx.fill();
-        ctx.closePath();
-
-       //Fade out animation.
-        function fadeOut() {
-             if (ctx.globalAlpha > 0) {
-                ctx.globalAlpha -= 0.05; // Adjust for speed of fade
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.beginPath();
-                ctx.arc(canvas.width / 2, canvas.height / 2, 50, 0, 2 * Math.PI);
-                ctx.fillStyle = 'white';
-                ctx.fill();
-                ctx.closePath();
-                requestAnimationFrame(fadeOut);
-            }
-            else{
-                ctx.globalAlpha = 1.0;
-                drawInitialCircle(); //Redraw.
-            }
-
-        }
-        fadeOut();
+    if (kickValue > kickThreshold && currentTime - lastKickTime > kickCooldown) {
+        lastKickTime = currentTime;
+        // Adjust threshold dynamically based on the current kickValue.
+        kickThreshold = Math.max(50, kickValue * thresholdAdjustmentFactor); // Prevent threshold from going too low.
+        return true;
     }
 
-    // Audio analysis
-    function analyzeAudio() {
-      if (!isPlaying) return; // Don't analyze if not playing
-
-        const bufferLength = analyser.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
-
-        const checkKick = () => {
-            if (!isPlaying) {  // Important check within the loop
-                return;
-            }
-            analyser.getByteFrequencyData(dataArray);
-            const threshold = parseFloat(thresholdInput.value);
-            const minFrequency = parseInt(minFrequencyInput.value);
-            const maxFrequency = parseInt(maxFrequencyInput.value);
-            const frequencyBinWidth = audioContext.sampleRate / analyser.fftSize;
-            const minIndex = Math.floor(minFrequency / frequencyBinWidth);
-            const maxIndex = Math.floor(maxFrequency / frequencyBinWidth);
-
-            let sum = 0;
-            for (let i = minIndex; i <= maxIndex; i++) {
-                sum += dataArray[i];
-            }
-            const average = sum / (maxIndex - minIndex + 1);
-            const normalizedAverage = average / 255;
-
-            if (normalizedAverage > threshold && !kickDetected) {
-                drawCircle();
-                kickDetected = true;
-            } else if (normalizedAverage <= threshold) {
-                kickDetected = false;
-            }
-
-            animationId = requestAnimationFrame(checkKick);
-        };
-        checkKick();
-    }
-
-    // Load and Play Audio (triggered by click)
-    async function loadAndPlayAudio() {
-        try {
-            if (!audioContext) {
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            }
-
-            const response = await fetch(audioFilePath);
-            if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
-            }
-            const arrayBuffer = await response.arrayBuffer();
-
-            audioContext.decodeAudioData(arrayBuffer, (buffer) => {
-                audioBuffer = buffer;
-                source = audioContext.createBufferSource();
-                source.buffer = audioBuffer;
-                analyser = audioContext.createAnalyser();
-                analyser.fftSize = 2048;
-                source.connect(analyser);
-                analyser.connect(audioContext.destination);
+    // Gradually decrease the threshold if no kick is detected
+    kickThreshold = Math.max(50, kickThreshold * 0.995); // Adjust decay rate as needed.
+    return false;
+}
 
 
-              // Start playing and analyzing, ONLY once things are set up.
-              if (audioContext.state === 'suspended') {
-                    audioContext.resume().then(() => {
-                        source.start();
-                        isPlaying = true; // Set playing flag
-                        analyzeAudio();
-                    });
-                } else {
-                    source.start();
-                    isPlaying = true; //Set.
-                    analyzeAudio();
-                }
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  analyser.getByteFrequencyData(dataArray);
 
-                source.onended = () => {
-                    isPlaying = false; // Reset playing flag
-                    cancelAnimationFrame(animationId);
-                    kickDetected = false;
-                    drawInitialCircle(); //Redraw.
-                     if (source) {
-                        source.disconnect();
-                        source = null;
-                    }
-                };
+  if (detectKick()) {
+    drawCircle();
+  }
 
-            }, (error) => {
-                console.error("Error decoding audio data:", error);
-                alert("Error decoding audio data. Check the console for details.");
-            });
+  requestAnimationFrame(draw);
+}
 
-        } catch (error) {
-            console.error("Error loading audio:", error);
-            alert("Error loading audio. Check the console for details.");
-        }
-    }
-    //Click Event Handler
-
-    canvas.addEventListener('click', () => {
-      if (!isPlaying){
-        if (!audioBuffer) { // First click: load and play
-            loadAndPlayAudio();
-        } else { // Subsequent clicks: resume if suspended
-             if (audioContext.state === 'suspended') {
-                audioContext.resume().then(()=> {
-                    source.start();
-                    isPlaying = true;
-                    analyzeAudio();
-                });
-
-            }
-             else{
-                  source.start(); // Start audio
-                  isPlaying = true; // Set
-                  analyzeAudio(); // Begin analysis
-             }
-        }
-      }
-      else{
-        source.stop();
-        isPlaying = false;
-        cancelAnimationFrame(animationId);
-        kickDetected = false;
-        drawInitialCircle();
-      }
-    });
+function drawCircle() {
+  ctx.fillStyle = 'white';
+  ctx.beginPath();
+  ctx.arc(canvas.width / 2, canvas.height / 2, 50, 0, 2 * Math.PI);
+  ctx.fill();
+}
 
 
-    // Initial drawing
-    drawInitialCircle();
+window.addEventListener('resize', () => {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+});
 
 </script>
 

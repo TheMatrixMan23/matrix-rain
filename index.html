@@ -1,166 +1,164 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<title>Audio Visualizer</title>
-<style>
-body {
-  background-color: black;
-  margin: 0;
-  overflow: hidden;
-  color: white;
-}
-
-#canvas {
-  display: block;
-}
-
-#controls {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 10;
-}
-
-input[type="range"] {
-  width: 200px;
-}
-
-label {
-    display: block;
-    margin-bottom: 5px;
-}
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Matrix Rain with Adaptive Beat Detection</title>
+  <style>
+    body {
+      margin: 0;
+      background: black;
+      overflow: hidden;
+      color: #0F0;
+      font-family: monospace;
+    }
+    canvas {
+      display: block;
+    }
+    #startMessage {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.7);
+      padding: 8px;
+      border: 1px solid #0F0;
+      z-index: 10;
+    }
+  </style>
 </head>
 <body>
+  <div id="startMessage">Click anywhere to start audio playback.</div>
+  <canvas id="matrixCanvas"></canvas>
 
-<canvas id="canvas"></canvas>
-<audio id="audio" controls style="display:none;"></audio>
+  <script>
+    // === Matrix Rain Setup ===
+    const canvas = document.getElementById("matrixCanvas");
+    const ctx = canvas.getContext("2d");
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 
-<div id="controls">
-    <label for="spikeThreshold">Spike Threshold Multiplier:</label>
-    <input type="range" id="spikeThreshold" min="1.0" max="5.0" step="0.1" value="2.0">
-    <span id="spikeThresholdValue">2.0</span>
+    const characters = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン" +
+                       "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん";
+    const fontSize = 20;
+    let columns = Math.floor(canvas.width / fontSize);
+    let drops = Array(columns).fill(0);
 
-    <label for="kickCooldown">Kick Cooldown (ms):</label>
-    <input type="range" id="kickCooldown" min="50" max="500" step="10" value="150">
-    <span id="kickCooldownValue">150</span>
+    // === Global Pulse & Beat Detection Variables ===
+    let globalPulse = 0;        // When > 0, letters will glow
+    const maxPulse = 40;        // Maximum pulse value (when a beat is detected)
+    const decayRate = 30;       // How quickly the pulse decays per frame
+    // Energy history for adaptive beat detection (Simple beat detection algorithm #3)
+    let energyHistory = [];
+    const historyLength = 43;   // Approximately 1 second of history
 
-    <label for="frequencyRange">Frequency Range (e.g., 20-50):</label>
-    <input type="text" id="frequencyRange" value="20-50">
-</div>
+    // === Audio Setup ===
+    const audio = new Audio("LL.m4a"); // Your audio file (ensure it's in your project folder and properly referenced)
+    audio.crossOrigin = "anonymous";
+    audio.loop = true;
 
-<script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-const audio = document.getElementById('audio');
+    const audioContext = new AudioContext();
+    const audioSource = audioContext.createMediaElementSource(audio);
+    // We'll use the time domain for energy detection.
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048; // Determines the size of the time-domain data array
+    const timeDomainData = new Uint8Array(analyser.fftSize);
+    audioSource.connect(analyser);
+    analyser.connect(audioContext.destination);
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+    // === User Interaction for Autoplay ===
+    document.body.addEventListener("click", () => {
+      if (audioContext.state === "suspended") {
+        audioContext.resume();
+      }
+      if (audio.paused) {
+        audio.play();
+      }
+      document.getElementById("startMessage").style.display = "none";
+    }, { once: true });
 
-// *** THIS IS WHERE YOU PUT THE FILE PATH ***
-const filePath = 'LL.m4a'; // Replace with your actual path!
-audio.src = filePath;
-
-audio.onerror = function() {
-  alert("Error loading audio file. Please check the file path. Is the file in the same directory?");
-};
-
-audio.onloadeddata = function() {
-  audio.play();
-  draw();
-};
-
-// ... (Rest of the JavaScript code from previous responses goes here)
-
-// Get slider elements
-const spikeThresholdSlider = document.getElementById('spikeThreshold');
-const kickCooldownSlider = document.getElementById('kickCooldown');
-const frequencyRangeInput = document.getElementById('frequencyRange');
-
-// Get display elements for values
-const spikeThresholdValueDisplay = document.getElementById('spikeThresholdValue');
-const kickCooldownValueDisplay = document.getElementById('kickCooldownValue');
-
-
-let spikeThresholdMultiplier = parseFloat(spikeThresholdSlider.value); // Initialize
-let kickCooldown = parseInt(kickCooldownSlider.value); // Initialize
-let frequencyRange = frequencyRangeInput.value;
-
-// Event listeners for sliders
-spikeThresholdSlider.addEventListener('input', () => {
-    spikeThresholdMultiplier = parseFloat(spikeThresholdSlider.value);
-    spikeThresholdValueDisplay.textContent = spikeThresholdSlider.value;
-});
-
-kickCooldownSlider.addEventListener('input', () => {
-    kickCooldown = parseInt(kickCooldownSlider.value);
-    kickCooldownValueDisplay.textContent = kickCooldownSlider.value;
-});
-
-frequencyRangeInput.addEventListener('input', () => {
-    frequencyRange = frequencyRangeInput.value;
-});
-
-
-
-function detectKick() {
-  const currentTime = audio.currentTime * 1000;
-
-  const [startFreq, endFreq] = frequencyRange.split('-').map(Number); // Parse frequency range
-  let currentLowFrequencyValue = analyzeFrequencyRange(startFreq, endFreq);
-
-  let spikeDetected = false;
-  const averagePrevious = previousLowFrequencyValues.reduce((a, b) => a + b, 0) / previousLowFrequencyValues.length;
-  if (currentLowFrequencyValue > averagePrevious * spikeThresholdMultiplier) {
-      spikeDetected = true;
-  }
-
-  previousLowFrequencyValues.shift();
-  previousLowFrequencyValues.push(currentLowFrequencyValue);
-
-  if (spikeDetected && currentTime - lastKickTime > kickCooldown) {
-    lastKickTime = currentTime;
-    return true;
-  }
-
-  return false;
-}
-
-function analyzeFrequencyRange(startFreq, endFreq) {
-    let sum = 0;
-    const startIndex = Math.round(startFreq / audioCtx.sampleRate * analyser.fftSize);
-    const endIndex = Math.round(endFreq / audioCtx.sampleRate * analyser.fftSize);
-    for (let i = startIndex; i < endIndex; i++) {
-        sum += dataArray[i];
+    // === Adaptive Beat Detection Function ===
+    function updatePulse() {
+      // Get the time-domain waveform data
+      analyser.getByteTimeDomainData(timeDomainData);
+      
+      // Compute instant energy (e): average of squared deviations from 128 (the center)
+      let energy = 0;
+      for (let i = 0; i < timeDomainData.length; i++) {
+        let v = timeDomainData[i] - 128;
+        energy += v * v;
+      }
+      energy /= timeDomainData.length;
+      
+      // Update the energy history buffer
+      energyHistory.push(energy);
+      if (energyHistory.length > historyLength) {
+        energyHistory.shift();
+      }
+      
+      // Compute local average energy <E>
+      const avgEnergy = energyHistory.reduce((sum, val) => sum + val, 0) / energyHistory.length;
+      // Compute variance V of the energy history
+      const variance = energyHistory.reduce((sum, val) => sum + Math.pow(val - avgEnergy, 2), 0) / energyHistory.length;
+      
+      // Compute adaptive threshold constant C using linear regression (from the paper)
+      const C = -0.0025714 * variance + 1.5142857;
+      
+      // If the instant energy exceeds C * <E>, trigger a beat (kick drum detected)
+      if (energy > C * avgEnergy) {
+        globalPulse = maxPulse;
+      }
+      
+      // Decay the pulse quickly (per frame)
+      if (globalPulse > 0) {
+        globalPulse -= decayRate;
+        if (globalPulse < 0) globalPulse = 0;
+      }
     }
-    return sum / (endIndex - startIndex);
-}
 
-function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  analyser.getByteFrequencyData(dataArray);
+    // === Draw Loop for Matrix Rain ===
+    function draw() {
+      updatePulse();
+      
+      // Draw a translucent overlay to create the fading trail effect.
+      ctx.fillStyle = "rgba(0, 0, 0, 0.05)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      ctx.fillStyle = "#0F0";
+      ctx.font = fontSize + "px monospace";
+      ctx.textBaseline = "top"; // Ensures drawing starts at the top of the text
+      
+      for (let i = 0; i < drops.length; i++) {
+        const x = i * fontSize;
+        const y = drops[i] * fontSize * 16; // Vertical spacing multiplier
+        
+        const text = characters.charAt(Math.floor(Math.random() * characters.length));
+        
+        // Apply the global pulse glow if active
+        if (globalPulse > 0) {
+          ctx.shadowColor = "rgba(0,255,0,0.7)"; // Slight transparency can be added here if desired
+          ctx.shadowBlur = globalPulse;
+        } else {
+          ctx.shadowBlur = 0;
+        }
+        
+        ctx.fillText(text, x, y);
+        
+        // Update drop position and randomly reset when reaching the bottom
+        drops[i] += 0.15;
+        if (drops[i] * fontSize * 2 > canvas.height && Math.random() > 0.975) {
+          drops[i] = 0;
+        }
+      }
+    }
+    setInterval(draw, 33);
 
-  if (detectKick()) {
-    drawCircle();
-  }
-
-  requestAnimationFrame(draw);
-}
-
-function drawCircle() {
-  ctx.fillStyle = 'white';
-  ctx.beginPath();
-  ctx.arc(canvas.width / 2, canvas.height / 2, 50, 0, 2 * Math.PI);
-  ctx.fill();
-}
-
-
-window.addEventListener('resize', () => {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-});
-
-</script>
-
+    // === Adjust Canvas on Resize ===
+    window.addEventListener("resize", () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      columns = Math.floor(canvas.width / fontSize);
+      drops = Array(columns).fill(0);
+    });
+  </script>
 </body>
 </html>

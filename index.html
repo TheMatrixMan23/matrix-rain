@@ -77,43 +77,39 @@
     }, { once: true });
 
     // === Adaptive Beat Detection Function ===
-    function updatePulse() {
-      // Get the time-domain waveform data
-      analyser.getByteTimeDomainData(timeDomainData);
-      
-      // Compute instant energy (e): average of squared deviations from 128 (the center)
-      let energy = 0;
-      for (let i = 0; i < timeDomainData.length; i++) {
-        let v = timeDomainData[i] - 128;
-        energy += v * v;
-      }
-      energy /= timeDomainData.length;
-      
-      // Update the energy history buffer
-      energyHistory.push(energy);
-      if (energyHistory.length > historyLength) {
-        energyHistory.shift();
-      }
-      
-      // Compute local average energy <E>
-      const avgEnergy = energyHistory.reduce((sum, val) => sum + val, 0) / energyHistory.length;
-      // Compute variance V of the energy history
-      const variance = energyHistory.reduce((sum, val) => sum + Math.pow(val - avgEnergy, 2), 0) / energyHistory.length;
-      
-      // Compute adaptive threshold constant C using linear regression (from the paper)
-      const C = -0.0025714 * variance + 1.5142857;
-      
-      // If the instant energy exceeds C * <E>, trigger a beat (kick drum detected)
-      if (energy > C * avgEnergy) {
-        globalPulse = maxPulse;
-      }
-      
-      // Decay the pulse quickly (per frame)
-      if (globalPulse > 0) {
-        globalPulse -= decayRate;
-        if (globalPulse < 0) globalPulse = 0;
-      }
-    }
+   function updatePulse() {
+  analyser.getByteTimeDomainData(timeDomainData);
+  
+  let energy = 0;
+  for (let i = 0; i < timeDomainData.length; i++) {
+    let v = timeDomainData[i] - 128;
+    energy += v * v;
+  }
+  energy /= timeDomainData.length;
+  
+  // Update energy history
+  energyHistory.push(energy);
+  if (energyHistory.length > historyLength) {
+    energyHistory.shift();
+  }
+  
+  const avgEnergy = energyHistory.reduce((sum, val) => sum + val, 0) / energyHistory.length;
+  const variance = energyHistory.reduce((sum, val) => sum + Math.pow(val - avgEnergy, 2), 0) / energyHistory.length;
+  
+  const C = -0.0025714 * variance + 1.5142857;
+  
+  // Increase delta requirement for triggering a pulse:
+  if (energy > C * avgEnergy && (energy - prevBassAvg) >= 15) {
+    globalPulse = maxPulse;
+  }
+  prevBassAvg = energy;
+  
+  // Decay pulse (you can experiment with increasing decayRate if needed)
+  if (globalPulse > 0) {
+    globalPulse -= decayRate;
+    if (globalPulse < 0) globalPulse = 0;
+  }
+}
 
     // === Draw Loop for Matrix Rain ===
     function draw() {

@@ -1,160 +1,101 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Matrix Rain with Adaptive Beat Detection</title>
-  <style>
-    body {
-      margin: 0;
-      background: black;
-      overflow: hidden;
-      color: #0F0;
-      font-family: monospace;
-    }
-    canvas {
-      display: block;
-    }
-    #startMessage {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      background: rgba(0,0,0,0.7);
-      padding: 8px;
-      border: 1px solid #0F0;
-      z-index: 10;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matrix Rain Effect with Audio Analysis</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            color: #0F0;
+        }
+
+        #matrix-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/meyda@4.2.0/dist/meyda.min.js"></script>
 </head>
 <body>
-  <div id="startMessage">Click anywhere to start audio playback.</div>
-  <canvas id="matrixCanvas"></canvas>
+    <canvas id="matrix-canvas"></canvas>
+    <audio id="audio" src="./LL.m4a" autoplay></audio>
+    <script>
+        // Matrix Rain Effect
+        const canvas = document.getElementById('matrix-canvas');
+        const ctx = canvas.getContext('2d');
 
-  <script>
-    // === Matrix Rain Setup ===
-    const canvas = document.getElementById("matrixCanvas");
-    const ctx = canvas.getContext("2d");
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
 
-    const characters = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン" +
-                       "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん";
-    const fontSize = 20;
-    let columns = Math.floor(canvas.width / fontSize);
-    let drops = Array(columns).fill(0);
+        const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        const fontSize = 10;
+        const columns = canvas.width / fontSize;
+        const drops = [];
 
-    // === Global Pulse & Beat Detection Variables ===
-    let globalPulse = 0;        // When > 0, letters will glow
-    const maxPulse = 40;        // Maximum pulse value (when a beat is detected)
-    const decayRate = 30;       // How quickly the pulse decays per frame
-    // Energy history for adaptive beat detection (Simple beat detection algorithm #3)
-    let energyHistory = [];
-    const historyLength = 43;   // Approximately 1 second of history
-
-    // === Audio Setup ===
-    const audio = new Audio("LL.m4a"); // Your audio file (ensure it's in your project folder and properly referenced)
-    audio.crossOrigin = "anonymous";
-    audio.loop = true;
-
-    const audioContext = new AudioContext();
-    const audioSource = audioContext.createMediaElementSource(audio);
-    // We'll use the time domain for energy detection.
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 2048; // Determines the size of the time-domain data array
-    const timeDomainData = new Uint8Array(analyser.fftSize);
-    audioSource.connect(analyser);
-    analyser.connect(audioContext.destination);
-
-    // === User Interaction for Autoplay ===
-    document.body.addEventListener("click", () => {
-      if (audioContext.state === "suspended") {
-        audioContext.resume();
-      }
-      if (audio.paused) {
-        audio.play();
-      }
-      document.getElementById("startMessage").style.display = "none";
-    }, { once: true });
-
-    // === Adaptive Beat Detection Function ===
-   function updatePulse() {
-  analyser.getByteTimeDomainData(timeDomainData);
-  
-  let energy = 0;
-  for (let i = 0; i < timeDomainData.length; i++) {
-    let v = timeDomainData[i] - 128;
-    energy += v * v;
-  }
-  energy /= timeDomainData.length;
-  
-  // Update energy history
-  energyHistory.push(energy);
-  if (energyHistory.length > historyLength) {
-    energyHistory.shift();
-  }
-  
-  const avgEnergy = energyHistory.reduce((sum, val) => sum + val, 0) / energyHistory.length;
-  const variance = energyHistory.reduce((sum, val) => sum + Math.pow(val - avgEnergy, 2), 0) / energyHistory.length;
-  
-  const C = -0.0025714 * variance + 1.5142857;
-  
-  // Increase delta requirement for triggering a pulse:
-  if (energy > C * avgEnergy && (energy - prevBassAvg) >= 15) {
-    globalPulse = maxPulse;
-  }
-  prevBassAvg = energy;
-  
-  // Decay pulse (you can experiment with increasing decayRate if needed)
-  if (globalPulse > 0) {
-    globalPulse -= decayRate;
-    if (globalPulse < 0) globalPulse = 0;
-  }
-}
-
-    // === Draw Loop for Matrix Rain ===
-    function draw() {
-      updatePulse();
-      
-      // Draw a translucent overlay to create the fading trail effect.
-      ctx.fillStyle = "rgba(0, 0, 0, 0.15)";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      
-      ctx.fillStyle = "#0F0";
-      ctx.font = fontSize + "px monospace";
-      ctx.textBaseline = "top"; // Ensures drawing starts at the top of the text
-      
-      for (let i = 0; i < drops.length; i++) {
-        const x = i * fontSize;
-        const y = drops[i] * fontSize * 16; // Vertical spacing multiplier
-        
-        const text = characters.charAt(Math.floor(Math.random() * characters.length));
-        
-        // Apply the global pulse glow if active
-        if (globalPulse > 0) {
-          ctx.shadowColor = "rgba(0,255,0,0.7)"; // Slight transparency can be added here if desired
-          ctx.shadowBlur = globalPulse;
-        } else {
-          ctx.shadowBlur = 0;
+        for (let i = 0; i < columns; i++) {
+            drops[i] = 1;
         }
-        
-        ctx.fillText(text, x, y);
-        
-        // Update drop position and randomly reset when reaching the bottom
-        drops[i] += 0.15;
-        if (drops[i] * fontSize * 2 > canvas.height && Math.random() > 0.975) {
-          drops[i] = 0;
-        }
-      }
-    }
-    setInterval(draw, 33);
 
-    // === Adjust Canvas on Resize ===
-    window.addEventListener("resize", () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-      columns = Math.floor(canvas.width / fontSize);
-      drops = Array(columns).fill(0);
-    });
-  </script>
+        function draw() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#0F0';
+            ctx.font = fontSize + 'px arial';
+
+            for (let i = 0; i < drops.length; i++) {
+                const text = letters[Math.floor(Math.random() * letters.length)];
+                ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+
+                if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+                    drops[i] = 0;
+                }
+                drops[i]++;
+            }
+        }
+
+        setInterval(draw, 33);
+
+        // Audio Analysis with Meyda
+        const audio = document.getElementById('audio');
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioContext.createMediaElementSource(audio);
+        const analyser = audioContext.createAnalyser();
+        source.connect(analyser);
+        analyser.connect(audioContext.destination);
+
+        Meyda.bufferSize = 256;
+        Meyda.sampleRate = audioContext.sampleRate;
+
+        function detectKickDrum(features) {
+            const spectralCentroid = features.spectralCentroid;
+            if (spectralCentroid < 1000) { 
+                document.body.style.backgroundColor = 'green';
+                setTimeout(() => {
+                    document.body.style.backgroundColor = 'black';
+                }, 100); 
+            }
+        }
+
+        Meyda.createMeydaAnalyzer({
+            audioContext: audioContext,
+            source: analyser,
+            bufferSize: Meyda.bufferSize,
+            featureExtractors: ["spectralCentroid"],
+            callback: detectKickDrum
+        }).start();
+
+        // Handle window resizing for canvas
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+    </script>
 </body>
 </html>
